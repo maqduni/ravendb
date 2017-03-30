@@ -46,7 +46,7 @@ namespace Raven.StorageExporter
 
         public Type SymmetricAlgorithmType { get; private set; }
 
-        public bool EncryptIndexes { get; private set; }
+        public bool EncryptIndexes { get; set; }
 
         public int PreferedEncryptionKeyBitsSize { get; private set; }
 

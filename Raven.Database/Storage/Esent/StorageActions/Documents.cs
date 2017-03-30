@@ -21,6 +21,7 @@ using Raven.Abstractions.Util;
 using Raven.Bundles.Compression.Plugin;
 using Raven.Json.Linq;
 using Raven.Storage.Esent.StorageActions;
+using Voron;
 
 namespace Raven.Database.Storage.Esent.StorageActions
 {
@@ -544,6 +545,11 @@ namespace Raven.Database.Storage.Esent.StorageActions
                 timeout, lastProcessedOnFailure, earlyExit, entityNames, failedToGetHandler);
         }
 
+        public void TouchCorruptDocumentPub(string key, out Etag preTouchEtag, out Etag afterTouchEtag, Etag seekAfterEtag)
+        {
+            throw new NotImplementedException();
+        }
+
         public Etag GetBestNextDocumentEtag(Etag etag)
         {
             Api.JetSetCurrentIndex(session, Documents, "by_etag");
@@ -606,6 +612,16 @@ namespace Raven.Database.Storage.Esent.StorageActions
             stat.TimeToGenerate = sp.Elapsed;
            
             return stat;
+        }
+
+        public bool WriteDocumentMetadataPub(JsonDocumentMetadata metadata, Slice key, bool shouldIgnoreConcurrencyExceptions = false)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IEnumerable<Tuple<Etag, string, bool, bool, Exception>> GetKeysAfterWithIdStartingWithPub(Etag etag, int take = Int32.MaxValue, Etag untilEtag = null, TimeSpan? timeout = null, Reference<bool> earlyExit = null, Action<List<DocumentFetchError>> failedToGetHandler = null, bool includeMetadataCanBeReadFlag = false, bool includeDocumentCanBeReadFlag = false)
+        {
+            throw new NotImplementedException();
         }
 
         public IEnumerable<JsonDocument> GetDocumentsWithIdStartingWith(string idPrefix, int start, int take, string skipAfter)

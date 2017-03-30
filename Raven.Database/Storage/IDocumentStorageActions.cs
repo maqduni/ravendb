@@ -13,6 +13,7 @@ using System.Linq;
 using Raven.Abstractions.Extensions;
 using Raven.Database.Extensions;
 using Raven.Imports.metrics.Core;
+using Voron;
 
 namespace Raven.Database.Storage
 {
@@ -64,8 +65,23 @@ namespace Raven.Database.Storage
         AddDocumentResult InsertDocument(string key, RavenJObject data, RavenJObject metadata, bool overwriteExisting);
 
         void TouchDocument(string key, out Etag preTouchEtag, out Etag afterTouchEtag);
+
+        void TouchCorruptDocumentPub(string key, out Etag preTouchEtag, out Etag afterTouchEtag, Etag seekAfterEtag);
+
         Etag GetBestNextDocumentEtag(Etag etag);
         DebugDocumentStats GetDocumentStatsVerySlowly(Action<string> progress, CancellationToken token);
+
+        bool WriteDocumentMetadataPub(JsonDocumentMetadata metadata, Slice key, bool shouldIgnoreConcurrencyExceptions = false);
+
+        IEnumerable<Tuple<Etag, string, bool, bool, Exception>> GetKeysAfterWithIdStartingWithPub(
+            Etag etag,
+            int take = int.MaxValue,
+            Etag untilEtag = null,
+            TimeSpan? timeout = null,
+            Reference<bool> earlyExit = null,
+            Action<List<DocumentFetchError>> failedToGetHandler = null,
+            bool includeMetadataCanBeReadFlag = false,
+            bool includeDocumentCanBeReadFlag = false);
     }
 
     public enum InvokeSource

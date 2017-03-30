@@ -303,6 +303,176 @@ namespace Raven.Database.Storage.Voron.StorageActions
                 lastProcessedDocument(lastDocEtag);
         }
 
+        public IEnumerable<Tuple<Etag, string, bool, bool, Exception>> GetKeysAfterWithIdStartingWithPub(
+            Etag etag, 
+            int take = int.MaxValue,
+            Etag untilEtag = null,
+            TimeSpan? timeout = null,
+            Reference<bool> earlyExit = null,
+            Action<List<DocumentFetchError>> failedToGetHandler = null,
+            bool includeMetadataCanBeReadFlag = false,
+            bool includeDocumentCanBeReadFlag = false)
+        {
+            if (earlyExit != null)
+                earlyExit.Value = false;
+            if (take < 0)
+                throw new ArgumentException("must have zero or positive value", "take");
+
+            if (take == 0)
+                yield break;
+
+            if (string.IsNullOrEmpty(etag))
+                throw new ArgumentNullException("etag");
+
+            Stopwatch duration = null;
+            if (timeout != null)
+                duration = Stopwatch.StartNew();
+
+            Etag lastDocEtag = null;
+            using (var iterator = tableStorage.Documents.GetIndex(Tables.Documents.Indices.KeyByEtag)
+                .Iterate(Snapshot, writeBatch.Value))
+            {
+                var slice = (Slice)etag.ToString();
+                if (iterator.Seek(slice) == false)
+                    yield break;
+
+                if (iterator.CurrentKey.Equals(slice)) // need gt, not ge
+                {
+                    if (iterator.MoveNext() == false)
+                        yield break;
+                }
+
+                //long fetchedDocumentTotalSize = 0;
+                int fetchedDocumentCount = 0;
+
+                Etag docEtag = etag;
+
+                var errors = new List<DocumentFetchError>();
+                var skipDocumentGetErrors = failedToGetHandler != null;
+                //var hasEntityNames = entityNames != null && entityNames.Count > 0;
+
+                do
+                {
+                    //cancellationToken.ThrowIfCancellationRequested();
+
+                    docEtag = Etag.Parse(iterator.CurrentKey.ToString());
+
+                    // We can skip many documents so the timeout should be at the start of the process to be executed.
+                    if (timeout != null)
+                    {
+                        if (duration.Elapsed > timeout.Value)
+                        {
+                            if (earlyExit != null)
+                                earlyExit.Value = true;
+                            break;
+                        }
+                    }
+
+                    if (untilEtag != null)
+                    {
+                        // This is not a failure, we are just ahead of when we expected to. 
+                        if (EtagUtil.IsGreaterThan(docEtag, untilEtag))
+                            break;
+                    }
+
+                    var key = GetKeyFromCurrent(iterator);
+                    //if (!string.IsNullOrEmpty(idPrefix))
+                    //{
+                    //    if (!key.StartsWith(idPrefix, StringComparison.OrdinalIgnoreCase))
+                    //    {
+                    //        // We assume that we have processed it because it is not of our interest.
+                    //        lastDocEtag = docEtag;
+                    //        continue;
+                    //    }
+                    //}
+
+                    //JsonDocument document;
+                    //try
+                    //{
+                    //    document = GetJsonDocument(hasEntityNames, key, entityNames);
+                    //}
+                    //catch (Exception e)
+                    //{
+                    //    if (skipDocumentGetErrors)
+                    //    {
+                    //        errors.Add(new DocumentFetchError
+                    //        {
+                    //            Key = key,
+                    //            Exception = e
+                    //        });
+                    //        continue;
+                    //    }
+
+                    //    throw;
+                    //}
+
+                    //if (document == null) //precaution - should never be true
+                    //{
+                    //    if (SkipConsistencyCheck)
+                    //        continue;
+
+                    //    throw new InvalidDataException(string.Format("Data corruption - the key = '{0}' was found in the documents index, but matching document was not found", key));
+                    //}
+
+                    //if (!document.Etag.Equals(docEtag) && !SkipConsistencyCheck)
+                    //{
+                    //    throw new InvalidDataException(string.Format("Data corruption - the etag for key ='{0}' is different between document and its index", key));
+                    //}
+
+                    int metadataSize = -1;
+                    int documentSize = -1;
+                    var sliceKey = (Slice)key;
+                    Exception exception = null;
+                    if (includeDocumentCanBeReadFlag || includeMetadataCanBeReadFlag)
+                    {
+                        try
+                        {
+                            var metadata = ReadDocumentMetadata(key, sliceKey, out metadataSize);
+                            if (includeDocumentCanBeReadFlag)
+                            {
+                                var @object = ReadDocumentData(key, sliceKey, metadata.Etag, metadata.Metadata, out documentSize);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            exception = ex;
+                            // ignored
+                        }
+                    }
+
+                    //fetchedDocumentTotalSize += document.SerializedSizeOnDisk;
+                    fetchedDocumentCount++;
+
+                    yield return Tuple.Create(docEtag, key, metadataSize > 0, documentSize > 0, exception);
+
+                    lastDocEtag = docEtag;
+
+                    //if (maxSize.HasValue && fetchedDocumentTotalSize >= maxSize)
+                    //{
+                    //    if (untilEtag != null && earlyExit != null)
+                    //        earlyExit.Value = true;
+                    //    break;
+                    //}
+
+                    if (fetchedDocumentCount >= take)
+                    {
+                        if (untilEtag != null && earlyExit != null)
+                            earlyExit.Value = true;
+                        break;
+                    }
+                } while (iterator.MoveNext());
+
+                if (skipDocumentGetErrors && errors.Count > 0)
+                {
+                    failedToGetHandler(errors);
+                }
+            }
+
+            //// We notify the last that we considered.
+            //if (lastProcessedDocument != null)
+            //    lastProcessedDocument(lastDocEtag);
+        }
+
         private JsonDocument GetJsonDocument(bool hasEntityNames, string key, HashSet<string> entityNames)
         {
             if (hasEntityNames == false)
@@ -695,6 +865,80 @@ namespace Raven.Database.Storage.Voron.StorageActions
             if (logger.IsDebugEnabled) { logger.Debug("TouchDocument() - document with key = '{0}'", key); }
         }
 
+        public void TouchCorruptDocumentPub(string key, out Etag preTouchEtag, out Etag afterTouchEtag, Etag seekAfterEtag)
+        {
+            if (string.IsNullOrEmpty(key))
+                throw new ArgumentNullException("key");
+
+            var normalizedKey = CreateKey(key);
+            var normalizedKeySlice = (Slice)normalizedKey;
+
+            if (!tableStorage.Documents.Contains(Snapshot, normalizedKeySlice, writeBatch.Value))
+            {
+                if (logger.IsDebugEnabled)
+                    logger.Debug("Document with dataKey='{0}' was not found", key);
+                preTouchEtag = null;
+                afterTouchEtag = null;
+                return;
+            }
+
+            int _;
+            JsonDocumentMetadata metadata;
+            try
+            {
+                metadata = ReadDocumentMetadata(normalizedKey, normalizedKeySlice, out _);
+
+                Console.WriteLine($"Metadata loaded for key '{key}', {metadata.Etag}");
+            }
+            catch (Exception)
+            {
+                Console.WriteLine($"Metadata failed to load for key '{key}'");
+                Console.WriteLine($"Looking for an etag for key '{key}', starting at {seekAfterEtag ?? Etag.Empty}");
+
+                metadata = new JsonDocumentMetadata()
+                {
+                    Etag = FindEtagByKey(normalizedKey, seekAfterEtag),
+                    Key = key,
+                    Metadata = new RavenJObject()
+                };
+
+                Console.WriteLine($"Found etag {metadata.Etag}");
+            }
+
+            var newEtag = uuidGenerator.CreateSequentialUuid(UuidType.Documents);
+            Console.WriteLine($"Generated new etag {newEtag}");
+
+            afterTouchEtag = newEtag;
+            preTouchEtag = metadata.Etag;
+            metadata.Etag = newEtag;
+
+            WriteDocumentMetadata(metadata, normalizedKeySlice, shouldIgnoreConcurrencyExceptions: true);
+
+            var keyByEtagIndex = tableStorage.Documents.GetIndex(Tables.Documents.Indices.KeyByEtag);
+
+            keyByEtagIndex.Delete(writeBatch.Value, preTouchEtag);
+            keyByEtagIndex.Add(writeBatch.Value, newEtag, normalizedKey);
+
+            documentCacher.RemoveCachedDocument(normalizedKey, preTouchEtag);
+            etagTouches.Add(preTouchEtag, afterTouchEtag);
+
+            if (logger.IsDebugEnabled) { logger.Debug("TouchDocument() - document with key = '{0}'", key); }
+        }
+
+        private Etag FindEtagByKey(string key, Etag seekAfterEtag = null)
+        {
+            var keyEtags = GetKeysAfterWithIdStartingWithPub(seekAfterEtag ?? Etag.Empty);
+            foreach (var etagTuple in keyEtags)
+            {
+                if (key.Equals(etagTuple.Item2, StringComparison.OrdinalIgnoreCase))
+                {
+                    return etagTuple.Item1;
+                }
+            }
+
+            return null;
+        }
+
         public Etag GetBestNextDocumentEtag(Etag etag)
         {
             if (etag == null) throw new ArgumentNullException("etag");
@@ -759,6 +1003,11 @@ namespace Raven.Database.Storage.Voron.StorageActions
             }
 
             return existingEtag;
+        }
+
+        public bool WriteDocumentMetadataPub(JsonDocumentMetadata metadata, Slice key, bool shouldIgnoreConcurrencyExceptions = false)
+        {
+            return WriteDocumentMetadata(metadata, key, true);
         }
 
         //returns true if it was update operation

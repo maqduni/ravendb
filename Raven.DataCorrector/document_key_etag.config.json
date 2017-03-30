@@ -1,0 +1,18 @@
+﻿{
+  "doc_touch_corrupt": {
+    "01000000-0000-0001-0000-0000000003A2": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A4": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A5": "document/partialkey"
+  },
+  "doc_touch": {
+    "01000000-0000-0001-0000-0000000003A2": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A4": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A5": "document/partialkey"
+  },
+  "doc_json": {
+    "01000000-0000-0001-0000-0000000003A2": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A4": "document/partialkey",
+    "01000000-0000-0001-0000-0000000003A5": "document/partialkey"
+  },
+  "compare_document_key_csvs": {}
+}
