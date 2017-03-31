@@ -215,6 +215,23 @@ it outputs a Tuple object with with four items,
 
 The results could be stored in a csv or any other human readable document format. That helped to identify all broken records and later pass them into `TouchCorruptDocumentPub()` for correction.
 
-This helped us to extract all data and then import them into a fresh instance like Oren suggested.
+We established the followng process that helped us to extract all data and then import them into a fresh instance like Oren suggested,
+
+1. Bring the db offline
+2. Make a copy of the database folder
+3. Get the list of all keys/etags
+4. Find corrupt records
+	- Correct them (Make sure the DocumentTouchCorruptSeekAfterEtag is set to either Empty or less than the first record in the list)
+5. Export all corrupt records into a json file
+6. Delete all corrupt records
+7. Find duplicate (in the sense of unique constraints, if any) records
+	- Correct them (requires bringing the db online)
+8. Verify the db for corrupt records again
+9. If no corruption found, bring the db online
+10. Start export
 
 This is how this tool was born, later I continued adding more functions to it. For example you can make a rough comarison between two databases by exporting all etags/document keys saving them as csv files and then letting the tool output a report with dicovered differences.
+
+Helpers:
+* ="""" & TRIM(A1) & """: """ & TRIM(B1) & ""","
+* RavenJObject.Parse(data);
