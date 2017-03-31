@@ -2,7 +2,7 @@
 
 The source code of the console application which uses thies functions is in Raven.DataCorrector project.
 
-## Problem
+## Problem #1
 
 Not so long ago, when I was worked at TransPerfect we encountered a serious problem on one of our RavenDB instances. Some records couldn't be read from the Voron store and the logs contained the following exception,
 
@@ -231,6 +231,22 @@ We established the followng process that helped us to extract all data and then 
 10. Start export
 
 This is how this tool was born, later I continued adding more functions to it. For example you can make a rough comarison between two databases by exporting all etags/document keys saving them as csv files and then letting the tool output a report with dicovered differences.
+
+## Problem #2
+Later this year we encountered another problem, the following exception was logged,
+```
+---> System.IO.InvalidDataException: Failed to de-serialize a document: documentCollection/480fcbd7-f051-444d-8c9e-cd19c774d8e7 ---> System.IO.IOException: Encrypted stream is not correctly salted with the document key. 
+---> System.IO.InvalidDataException: The encrypted stream's salt was different than the expected salt.
+   at Raven.Database.Bundles.Encryption.CodecSaltExtensions.ReadSalt(Stream stream, String key) in C:\Builds\RavenDB-3.5-Patch\Raven.Database\Bundles\Encryption\Codec.cs:line 213
+```
+as previously we contacted Oren and got these responses back:
+* What I think happened is that you have an encrypted db, and at some point someone reset the user password.
+  RavenDB is using DPAPI to store the secret key, so if you reset the password, that provide a different key, and may result in a silent key change for RavenDB.
+  Later documents are fine, but older document are using the old (lost) key.
+* We found a bug that may cause this issue on Voron systems, and we have a hotfix for that. (Stable release is in the works)
+  Since you have a replica that works, you can switch it up and make the secondary the primary and replciate back from it.
+
+In this case of course there was nothing we could do, but this tool helped us quickly identify all affected documents and take corresponding measures.
 
 Helpers:
 * ="""" & TRIM(A1) & """: """ & TRIM(B1) & ""","
