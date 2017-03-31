@@ -4,7 +4,7 @@ The source code of the console application which uses thies functions is in Rave
 
 ## Problem #1
 
-Not so long ago, when I was worked at TransPerfect we encountered a serious problem on one of our RavenDB instances. Some records couldn't be read from the Voron store and the logs contained the following exception,
+Not so long ago, when I was with my old company we encountered a serious problem on one of our RavenDB instances. Some records couldn't be read from the Voron store and the logs contained the following exception,
 
 ```
 System.IO.InvalidDataException: Failed to de-serialize metadata of document documentCollection/3c93ae96-aa62-42b0-afa3-4bb693cbcdd4 ---> System.IO.EndOfStreamException: Attempted to read past the end of the stream.
