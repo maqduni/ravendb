@@ -6,7 +6,7 @@ The source code of the console application which uses thies functions is in Rave
 
 Not so long ago, when I was with my old company we encountered a serious problem on one of our RavenDB instances. Some records couldn't be read from the Voron store and the logs contained the following exception,
 
-```
+```c#
 System.IO.InvalidDataException: Failed to de-serialize metadata of document documentCollection/3c93ae96-aa62-42b0-afa3-4bb693cbcdd4 ---> System.IO.EndOfStreamException: Attempted to read past the end of the stream.
    at Raven.Abstractions.Extensions.StreamExtensions.ReadEtag(Stream stream) in c:\Builds\RavenDB-Stable-3.0\Raven.Abstractions\Extensions\StreamExtensions.cs:line 162
    at Raven.Database.Storage.Voron.StorageActions.DocumentsStorageActions.ReadDocumentMetadata(String normalizedKey, Slice sliceKey, Int32& size)
@@ -33,7 +33,7 @@ First thing we opened an issue in Raven google groups. Oren Eini responded, he i
 
 By following the chain of calls in the exception stack I ended up in `DocumentsStorageActions.ReadDocumentMetadata()` method. It turned out that metadata weren't present for those documents, or were present partially and couldn't be deserialized. The only option that I had in mind then is to somehow force the metadata into the document and make it readable, `DocumentsStorageActions.TouchDocument()` turned out to be just that function that I needed. Normally it simply updates the documents etag, i.e. "touches" it without really updating anything. But in order to make it work for my case I had to slightly modify it, so that in case the metadata turned out to be unreadable my function would overwrite them with a new metadata object. I called my modification `TouchCorruptDocumentPub()`, where ending Pub signifies that the function is publicly available.
 
-```
+```c#
 public void TouchCorruptDocumentPub(string key, out Etag preTouchEtag, out Etag afterTouchEtag, Etag seekAfterEtag)
         {
             if (string.IsNullOrEmpty(key))
@@ -97,7 +97,7 @@ public void TouchCorruptDocumentPub(string key, out Etag preTouchEtag, out Etag 
 
 This fixed the problem for individual documents. Now I had to figure out how to fix all of the affected documents, so here comes the function that traverses the etag tree and attempts to load each corresponding document and it's metadata,
 
-```
+```c#
 public IEnumerable<Tuple<Etag, string, bool, bool, Exception>> GetKeysAfterWithIdStartingWithPub(
             Etag etag, 
             int take = int.MaxValue,
@@ -234,7 +234,7 @@ This is how this tool was born, later I continued adding more functions to it. F
 
 ## Problem #2
 Later this year we encountered another problem, the following exception was logged,
-```
+```c#
 ---> System.IO.InvalidDataException: Failed to de-serialize a document: documentCollection/480fcbd7-f051-444d-8c9e-cd19c774d8e7 ---> System.IO.IOException: Encrypted stream is not correctly salted with the document key. 
 ---> System.IO.InvalidDataException: The encrypted stream's salt was different than the expected salt.
    at Raven.Database.Bundles.Encryption.CodecSaltExtensions.ReadSalt(Stream stream, String key) in C:\Builds\RavenDB-3.5-Patch\Raven.Database\Bundles\Encryption\Codec.cs:line 213
